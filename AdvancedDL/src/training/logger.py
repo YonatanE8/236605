@@ -1,6 +1,6 @@
 from abc import ABC
 from typing import Any, Iterable
-from DynamicalSystems import LOGS_DIR
+from AdvancedDL import LOGS_DIR
 
 import os
 import pickle

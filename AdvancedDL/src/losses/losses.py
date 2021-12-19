@@ -1,7 +1,7 @@
 from torch import nn, Tensor
 from abc import ABC, abstractmethod
 from typing import Sequence, Union, Dict
-from MoCo.src.utils.defaults import Inputs, Outputs
+from AdvancedDL.src.utils.defaults import Inputs, Outputs
 
 
 class LossComponent(nn.Module, ABC):

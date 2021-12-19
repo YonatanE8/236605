@@ -1,12 +1,11 @@
 from torch import Tensor
-from torchvision.models.resnet import conv1x1, conv3x3, BasicBlock, Bottleneck
-from typing import Type, Any, Callable, Union, List, Optional, Dict
+from torchvision.models.resnet import conv1x1, BasicBlock, Bottleneck
+from typing import Type, Any, Callable, Union, List, Optional
 
 import torch.nn as nn
 
 
 class ResNet(nn.Module):
-
     def __init__(
             self,
             input_dim: int,

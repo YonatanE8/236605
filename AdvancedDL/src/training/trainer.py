@@ -1,11 +1,11 @@
 from abc import ABC
 from torch import nn
 from typing import List, Callable, Tuple, Sequence
-from MoCo.src.training.logger import Logger
-from MoCo.src.losses.losses import LossComponent
-from MoCo.src.training.optimizer import Optimizer
+from AdvancedDL.src.training.logger import Logger
+from AdvancedDL.src.losses.losses import LossComponent
+from AdvancedDL.src.training.optimizer import Optimizer
 from torch.utils.data.dataloader import DataLoader
-from MoCo.src.utils.defaults import Inputs, Outputs
+from AdvancedDL.src.utils.defaults import Inputs, Outputs
 
 import os
 import tqdm
