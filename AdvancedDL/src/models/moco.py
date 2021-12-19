@@ -1,5 +1,5 @@
-from typing import Sequence, Dict
 from torch import nn, Tensor, functional
+from typing import Sequence, Dict, Callable
 from AdvancedDL.src.models.fc import MLP
 from AdvancedDL.src.models.resnet import resnet50
 from AdvancedDL.src.utils.defaults import Queue, Key, Logits, Predictions
@@ -12,6 +12,7 @@ class MoCoV2(nn.Module):
     def __init__(
             self,
             input_dim: int,
+            encoder_builder: Callable = resnet50,
             queue_size: int = 65536,
             momentum: float = 0.999,
             temperature: float = 0.2,
@@ -31,7 +32,7 @@ class MoCoV2(nn.Module):
         self.queue_size = queue_size
         self.momentum = momentum
         self.temperature = temperature
-        resnet = resnet50(
+        resnet = encoder_builder(
             input_dim=input_dim,
             **resnet_kwargs
         )
