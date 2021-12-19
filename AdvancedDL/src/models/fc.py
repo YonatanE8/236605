@@ -455,7 +455,8 @@ class MLP(nn.Module, ABC):
                  final_activation: Union[str, dict, None] = None,
                  norm: Union[dict, None] = None,
                  final_norm: Union[dict, None] = None,
-                 dropout: Union[float, None] = None):
+                 dropout: Union[float, None] = None,
+                 ):
         """
         The constructor for the MLP class.
 

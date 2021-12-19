@@ -358,7 +358,77 @@ class Trainer(ABC):
 
             avg_loss = np.mean(losses).item()
             avg_acc = np.mean(accuracies).item()
-            pbar.set_description(f'{pbar_name} (Avg. Loss {avg_loss:.3f}, '
-                                 f'Avg. Accuracy {avg_acc:.3f})')
+            pbar.set_description(
+                f'{pbar_name} (Avg. Loss {avg_loss:.3f}, '
+                f'Avg. Accuracy {avg_acc:.3f})'
+            )
 
         return losses, accuracies
+
+
+class MoCoTrainer(Trainer):
+    def __init__(
+            self,
+            model: nn.Module,
+            loss_fn: LossComponent,
+            evaluation_metric: LossComponent,
+            optimizer: Optimizer,
+            logger: Logger,
+            device: torch.device = torch.device(
+                'cuda' if torch.cuda.is_available() else 'cpu'
+            ),
+            max_iterations_per_epcoch: int = float('inf'),
+    ):
+        super(MoCoTrainer, self).__init__(
+            model=model,
+            loss_fn=loss_fn,
+            evaluation_metric=evaluation_metric,
+            optimizer=optimizer,
+            logger=logger,
+            device=device,
+            max_iterations_per_epcoch=max_iterations_per_epcoch,
+        )
+
+    def train_batch(self, batch, ignore_cap: bool = False) -> Tuple[float, float]:
+        # Unpack the batch
+        x = batch[Inputs]
+        x = x.to(self._device)
+
+        # Run the forward pass
+        outputs = self._model.forward(x)
+
+        # Zero the gradients after each step
+        self._optimizer.zero_grad()
+
+        # Compute the loss with respect to the true labels
+        batch[Outputs] = outputs
+        loss = self._loss_fn(batch)
+
+        # Run the backwards pass
+        loss.backward()
+
+        # Perform the optimization step
+        self._optimizer.step()
+
+        # Compute the 'accuracy'
+        accuracy = self._evaluation_metric(batch)
+
+        return loss.item(), accuracy.item()
+
+    def test_batch(self, batch, ignore_cap: bool = False) -> Tuple[float, float]:
+        # Unpack the batch
+        x = batch[Inputs]
+        x = x.to(self._device)
+
+        with torch.no_grad():
+            # Run the forward pass
+            outputs = self._model.forward(x)
+
+            # Compute the loss with respect to the true labels
+            batch[Outputs] = outputs
+            loss = self._loss_fn(batch)
+
+            # Compute the 'accuracy'
+            accuracy = self._evaluation_metric(batch)
+
+        return loss.item(), accuracy.item()
