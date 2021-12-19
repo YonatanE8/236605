@@ -1,0 +1,2 @@
+Inputs = 'x'
+Outputs = 'y'
