@@ -34,7 +34,7 @@ logs_dir = os.path.join(log_dir, experiment_name)
 os.makedirs(logs_dir, exist_ok=True)
 
 # Define the Datasets & Data loaders
-num_workers = 4
+num_workers = 0
 pin_memory = True
 batch_size = 4
 self_train_dl = DataLoader(
@@ -162,6 +162,7 @@ logger = Logger(
 )
 
 # Define the trainer
+max_iterations_per_epoch = 100
 trainer = MoCoTrainer(
     model=model,
     loss_fn=loss_fn,
@@ -170,11 +171,13 @@ trainer = MoCoTrainer(
     logger=logger,
     device=device,
     self_training=True,
+    max_iterations_per_epoch=max_iterations_per_epoch,
 )
 
 if __name__ == '__main__':
+    # Start the self-training phase
     print("Pre-training the model")
-    num_epochs = 5
+    num_epochs = 10
     checkpoints = True
     early_stopping = None
     checkpoints_mode = 'min'
@@ -187,7 +190,39 @@ if __name__ == '__main__':
         early_stopping=early_stopping,
     )
 
+    # Start the supervised training phase
     print("Fine-tuning the model")
+
+    # Initialize the model with only the linear classification layer as learnable parameter
+    model_params['self_training'] = False
+    model = MoCoV2(
+        **model_params
+    )
+    model_ckpt_path = f"{os.path.join(logs_dir, 'SelfTraining')}/BestModel.PyTorchModule"
+    model_ckp = torch.load(model_ckpt_path)
+    model.load_state_dict(model_ckp['model'])
+    model.to(device)
+
+    # Define a new optimizer for the fine-tuning phase
+    optimizers_params = (
+        {
+            'lr': 0.01,
+            'weight_decay': 1e-4,
+        },
+    )
+    optimizer_init_params = {
+        'optimizers_types': optimizers_types,
+        'optimizers_params': optimizers_params,
+        'schedulers_types': schedulers_types,
+        'schedulers_params': schedulers_params,
+    }
+    optimizer = OptimizerInitializer(
+        **optimizer_init_params
+    )
+    model_parameters = (model.linear_params(),)
+    optimizer = optimizer.initialize(model_parameters)
+
+    # Set up the appropriate loss function, accuracy criterion and logger
     loss_fn = CrossEntropy(
         predictions_key=Predictions,
         target_key=Targets,
@@ -196,32 +231,6 @@ if __name__ == '__main__':
         k=1,
         num_classes=10,
     )
-    trainer.set_loss_and_eval_criterions(
-        loss_fn=loss_fn,
-        eval_fn=evaluation_metric,
-    )
-    trainer.set_self_training(False)
-    trainer.freeze_model()
-    checkpoints_mode = 'max'
-    trainer.fit(
-        dl_train=train_dl,
-        dl_val=val_dl,
-        num_epochs=num_epochs,
-        checkpoints=checkpoints,
-        checkpoints_mode=checkpoints_mode,
-        early_stopping=early_stopping,
-    )
-
-    print("Evaluating over the test set")
-    model_params['self_training'] = False
-    model = MoCoV2(
-        **model_params
-    )
-    model_ckpt_path = f"{logs_dir}/BestModel.PyTorchModule"
-    model_ckp = torch.load(model_ckpt_path)
-    model.load_state_dict(model_ckp['model'])
-    model.to(device)
-
     logger = Logger(
         log_dir=log_dir,
         experiment_name=experiment_name,
@@ -234,6 +243,39 @@ if __name__ == '__main__':
         optimizer=optimizer,
         logger=logger,
         device=device,
+        self_training=False,
+        max_iterations_per_epoch=max_iterations_per_epoch,
+    )
+    trainer.freeze_model()
+    checkpoints_mode = 'max'
+    trainer.fit(
+        dl_train=train_dl,
+        dl_val=val_dl,
+        num_epochs=num_epochs,
+        checkpoints=checkpoints,
+        checkpoints_mode=checkpoints_mode,
+        early_stopping=early_stopping,
+    )
+
+    # Perform the final evaluation
+    print("Evaluating over the test set")
+    model = MoCoV2(
+        **model_params
+    )
+    model_ckpt_path = f"{logs_dir}/BestModel.PyTorchModule"
+    model_ckp = torch.load(model_ckpt_path)
+    model.load_state_dict(model_ckp['model'])
+    model.to(device)
+
+    trainer = MoCoTrainer(
+        model=model,
+        loss_fn=loss_fn,
+        evaluation_metric=evaluation_metric,
+        optimizer=optimizer,
+        logger=logger,
+        device=device,
+        self_training=False,
+        max_iterations_per_epoch=max_iterations_per_epoch,
     )
     trainer.evaluate(
         dl_test=val_dl,

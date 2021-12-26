@@ -61,7 +61,7 @@ class MoCoV2(nn.Module):
         # Create the linear layer for later use
         self.linear_mlp = MLP(
             n_layers=1,
-            in_channels=1,
+            in_channels=10,
             out_channels=10,
             l0_units=4096,
             units_grow_rate=1,
@@ -115,31 +115,32 @@ class MoCoV2(nn.Module):
         if not self._self_training:
             # Linear predictor
             q = self.linear_mlp(q)
+            q = torch.nn.functional.normalize(q, dim=1)
+            logits = q
 
         else:
             # MLP predictor
             q = self.mlp_q(q)
+            q = torch.nn.functional.normalize(q, dim=1)
 
-        q = torch.nn.functional.normalize(q, dim=1)
+            # Compute key features
+            with torch.no_grad():
+                self._update_key_encoder()
+                k = self.resnet_k(in_k)
+                k = self.mlp_k(k)
+                k = torch.nn.functional.normalize(k, dim=1)
 
-        # Compute key features
-        with torch.no_grad():
-            self._update_key_encoder()
-            k = self.resnet_k(in_k)
-            k = self.mlp_k(k)
-            k = torch.nn.functional.normalize(k, dim=1)
+            # Compute logits
+            positive_logits = torch.einsum('nc,nc->n', [q, k]).unsqueeze(-1)
+            negative_logits = torch.einsum('nc,ck->nk', [q, self.queue.clone().detach()])
+            logits = torch.cat([positive_logits, negative_logits], dim=1)
 
-        # Compute logits
-        positive_logits = torch.einsum('nc,nc->n', [q, k]).unsqueeze(-1)
-        negative_logits = torch.einsum('nc,ck->nk', [q, self.queue.clone().detach()])
-        logits = torch.cat([positive_logits, negative_logits], dim=1)
+            # dequeue and enqueue
+            self._dequeue_and_enqueue(k)
 
         # apply temperature
         logits = (logits / self.temperature).type(torch.double)
         labels = torch.zeros(logits.shape[0], dtype=torch.long).to(logits.device)
-
-        # dequeue and enqueue
-        self._dequeue_and_enqueue(k)
 
         outputs = {
             Predictions: logits,

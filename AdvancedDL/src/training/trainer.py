@@ -58,7 +58,7 @@ class Trainer(ABC):
         self._evaluation_metric = evaluation_metric
         self._optimizer = optimizer
         self._device = device
-        self._max_iterations_per_epcoch = max_iterations_per_epcoch
+        self._max_iterations_per_epoch = max_iterations_per_epcoch
         self._logger = logger
         self._save_path_dir = logger.save_dir
 
@@ -249,7 +249,12 @@ class Trainer(ABC):
         """
 
         self._model.train(True)
-        loss, accuracy = self._foreach_batch(dl_train, self.train_batch)
+        loss, accuracy = self._foreach_batch(
+            dl=dl_train,
+            forward_fn=self.train_batch,
+            ignore_cap=False,
+            max_iterations_per_epoch=self._max_iterations_per_epoch
+        )
 
         return np.mean(loss).item(), np.mean(accuracy).item()
 
@@ -264,7 +269,12 @@ class Trainer(ABC):
         """
 
         self._model.train(False)
-        loss, accuracy = self._foreach_batch(dl_test, self.test_batch, ignore_cap)
+        loss, accuracy = self._foreach_batch(
+            dl=dl_test,
+            forward_fn=self.test_batch,
+            ignore_cap=ignore_cap,
+            max_iterations_per_epoch=self._max_iterations_per_epoch
+        )
 
         return np.mean(loss).item(), np.mean(accuracy).item()
 
@@ -334,7 +344,12 @@ class Trainer(ABC):
         return loss.item(), accuracy
 
     @staticmethod
-    def _foreach_batch(dl: DataLoader, forward_fn: Callable, ignore_cap: bool = False) -> Tuple[List, List]:
+    def _foreach_batch(
+            dl: DataLoader,
+            forward_fn: Callable,
+            ignore_cap: bool = False,
+            max_iterations_per_epoch: int = None,
+    ) -> Tuple[List, List]:
         """
         Evaluates the given forward-function on batches from the given
         dataloader, and prints progress along the way.
@@ -383,7 +398,7 @@ class MoCoTrainer(Trainer):
             device: torch.device = torch.device(
                 'cuda' if torch.cuda.is_available() else 'cpu'
             ),
-            max_iterations_per_epcoch: int = float('inf'),
+            max_iterations_per_epoch: int = float('inf'),
             self_training: bool = True,
     ):
         super(MoCoTrainer, self).__init__(
@@ -393,7 +408,7 @@ class MoCoTrainer(Trainer):
             optimizer=optimizer,
             logger=logger,
             device=device,
-            max_iterations_per_epcoch=max_iterations_per_epcoch,
+            max_iterations_per_epcoch=max_iterations_per_epoch,
         )
 
         self._self_training = self_training
@@ -411,20 +426,44 @@ class MoCoTrainer(Trainer):
     def train_epoch(self, dl_train: DataLoader) -> Tuple[float, float]:
         self._model.train(True)
         if self._self_training:
-            loss, accuracy = self._foreach_batch_self_training(dl_train, self.train_batch)
+            loss, accuracy = self._foreach_batch_self_training(
+                dl=dl_train,
+                forward_fn=self.train_batch,
+                ignore_cap=False,
+                max_iterations_per_epoch=self._max_iterations_per_epoch,
+                device=self._device,
+            )
 
         else:
-            loss, accuracy = self._foreach_batch(dl_train, self.train_batch)
+            loss, accuracy = self._foreach_batch(
+                dl=dl_train,
+                forward_fn=self.train_batch,
+                ignore_cap=False,
+                max_iterations_per_epoch=self._max_iterations_per_epoch,
+                device=self._device,
+            )
 
         return np.mean(loss).item(), np.mean(accuracy).item()
 
     def test_epoch(self, dl_test: DataLoader, ignore_cap: bool = False) -> Tuple[float, float]:
         self._model.train(False)
         if self._self_training:
-            loss, accuracy = self._foreach_batch_self_training(dl_test, self.test_batch, False)
+            loss, accuracy = self._foreach_batch_self_training(
+                dl=dl_test,
+                forward_fn=self.test_batch,
+                ignore_cap=False,
+                max_iterations_per_epoch=self._max_iterations_per_epoch,
+                device=self._device,
+            )
 
         else:
-            loss, accuracy = self._foreach_batch(dl_test, self.test_batch, ignore_cap)
+            loss, accuracy = self._foreach_batch(
+                dl=dl_test,
+                forward_fn=self.test_batch,
+                ignore_cap=ignore_cap,
+                max_iterations_per_epoch=self._max_iterations_per_epoch,
+                device=self._device,
+            )
 
         return np.mean(loss).item(), np.mean(accuracy).item()
 
@@ -469,6 +508,7 @@ class MoCoTrainer(Trainer):
             dl: DataLoader,
             forward_fn: Callable,
             ignore_cap: bool = False,
+            max_iterations_per_epoch: int = None,
             device: torch.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'),
     ) -> Tuple[List, List]:
         """
@@ -487,9 +527,15 @@ class MoCoTrainer(Trainer):
         losses = []
         accuracies = []
         num_batches = len(dl.batch_sampler)
+        if max_iterations_per_epoch is None:
+            max_iterations_per_epoch = num_batches
+
         pbar_name = forward_fn.__name__
-        with tqdm.tqdm(desc=pbar_name, total=num_batches) as pbar:
+        with tqdm.tqdm(desc=pbar_name, total=(min(max_iterations_per_epoch, num_batches))) as pbar:
             for batch_idx, (x, y) in enumerate(dl):
+                if batch_idx == max_iterations_per_epoch:
+                    break
+
                 data = {
                     Queue: x.to(device),
                     Key: x.to(device),
@@ -517,14 +563,21 @@ class MoCoTrainer(Trainer):
             dl: DataLoader,
             forward_fn: Callable,
             ignore_cap: bool = False,
+            max_iterations_per_epoch: int = None,
             device: torch.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'),
     ) -> Tuple[List, List]:
         losses = []
         accuracies = []
         num_batches = len(dl.batch_sampler)
+        if max_iterations_per_epoch is None:
+            max_iterations_per_epoch = num_batches
+
         pbar_name = forward_fn.__name__
-        with tqdm.tqdm(desc=pbar_name, total=num_batches) as pbar:
+        with tqdm.tqdm(desc=pbar_name, total=min(max_iterations_per_epoch, num_batches)) as pbar:
             for batch_idx, (x, _) in enumerate(dl):
+                if batch_idx == max_iterations_per_epoch:
+                    break
+
                 data = {
                     Queue: x[0].to(device),
                     Key: x[1].to(device),
