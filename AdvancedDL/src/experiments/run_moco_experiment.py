@@ -8,11 +8,11 @@ from AdvancedDL import LOGS_DIR
 from torch.utils.data import DataLoader
 from AdvancedDL.src.models.moco import MoCoV2
 from AdvancedDL.src.training.logger import Logger
-from AdvancedDL.src.models.resnet import resnet18, resnet50
 from AdvancedDL.src.training.trainer import MoCoTrainer
 from AdvancedDL.src.training.optimizer import OptimizerInitializer
 from AdvancedDL.src.losses.losses import CrossEntropy, TopKAccuracy
 from AdvancedDL.src.utils.defaults import Predictions, Labels, Targets
+from AdvancedDL.src.models.resnet import resnet18, resnet50, IdentityLayer
 from AdvancedDL.src.data.datasets import imagenette_train_ds, imagenette_val_ds, imagenette_self_train_ds
 
 import torch
@@ -34,9 +34,9 @@ logs_dir = os.path.join(log_dir, experiment_name)
 os.makedirs(logs_dir, exist_ok=True)
 
 # Define the Datasets & Data loaders
-num_workers = 0
+num_workers = 32
 pin_memory = True
-batch_size = 4
+batch_size = 256
 self_train_dl = DataLoader(
     dataset=imagenette_self_train_ds,
     batch_size=batch_size,
@@ -61,12 +61,17 @@ val_dl = DataLoader(
 
 # Define the model
 in_channels = 3
-# encoder_builder = resnet50
-encoder_builder = resnet18
+encoder_builder = resnet50
+# encoder_builder = resnet18
 queue_size = 65536
 momentum = 0.999
 temperature = 0.2
-resnet_kwargs = {}
+resnet_kwargs = {
+    'norm_layer': None,
+    # 'norm_layer': IdentityLayer,
+    # 'norm_layer': torch.nn.InstanceNorm2d,
+
+}
 n_classes = 10
 n_layers = 2
 units_grow_rate = 1
@@ -162,7 +167,7 @@ logger = Logger(
 )
 
 # Define the trainer
-max_iterations_per_epoch = 100
+max_iterations_per_epoch = None
 trainer = MoCoTrainer(
     model=model,
     loss_fn=loss_fn,
@@ -177,7 +182,7 @@ trainer = MoCoTrainer(
 if __name__ == '__main__':
     # Start the self-training phase
     print("Pre-training the model")
-    num_epochs = 10
+    num_epochs = 1000
     checkpoints = True
     early_stopping = None
     checkpoints_mode = 'min'

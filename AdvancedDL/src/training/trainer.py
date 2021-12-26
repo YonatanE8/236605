@@ -1,6 +1,6 @@
 from abc import ABC
 from torch import nn
-
+from typing import Optional
 from AdvancedDL.src.models.moco import MoCoV2
 from AdvancedDL.src.training.logger import Logger
 from torch.utils.data.dataloader import DataLoader
@@ -398,7 +398,7 @@ class MoCoTrainer(Trainer):
             device: torch.device = torch.device(
                 'cuda' if torch.cuda.is_available() else 'cpu'
             ),
-            max_iterations_per_epoch: int = float('inf'),
+            max_iterations_per_epoch: Optional[int] = float('inf'),
             self_training: bool = True,
     ):
         super(MoCoTrainer, self).__init__(

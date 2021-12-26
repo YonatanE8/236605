@@ -64,6 +64,18 @@ class ResNet(TorchResNet):
         return self.forward(x)
 
 
+class IdentityLayer(nn.Module):
+    def __init__(self, in_channels: int = 1):
+        super(IdentityLayer, self).__init__()
+        self._in_channels = in_channels
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x
+
+    def __call__(self, x: Tensor) -> Tensor:
+        return self.forward(x)
+
+
 def resnet18(
         in_channels: int,
         **kwargs: Any,
