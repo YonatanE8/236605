@@ -32,6 +32,5 @@ setup(
         'scipy',
         'matplotlib',
         'tqdm',
-        'pandas',
     ],
 )
