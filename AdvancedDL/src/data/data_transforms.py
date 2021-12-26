@@ -5,9 +5,9 @@ from PIL import ImageFilter
 import numpy as np
 
 
-class RandomCropsTransform(object):
+class TwoCropsTransform(object):
     def __init__(self, base_transform):
-        super(RandomCropsTransform, self).__init__()
+        super(TwoCropsTransform, self).__init__()
         self.base_transform = base_transform
 
     def __call__(self, x: Tensor) -> Tuple[Tensor, Tensor]:

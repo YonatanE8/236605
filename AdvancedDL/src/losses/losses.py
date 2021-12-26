@@ -1,7 +1,8 @@
 from torch import nn, Tensor
 from abc import ABC, abstractmethod
 from typing import Sequence, Union, Dict
-from AdvancedDL.src.utils.defaults import Inputs, Outputs
+from torchmetrics.functional import accuracy
+from AdvancedDL.src.utils.defaults import Predictions, Targets
 
 
 class LossComponent(nn.Module, ABC):
@@ -65,9 +66,45 @@ class ModuleLoss(LossComponent):
         :return: (Tensor) A scalar Tensor representing the aggregated loss
         """
 
-        y_pred = inputs[Inputs]
-        y = inputs[Outputs]
+        y_pred = inputs[Predictions]
+        y = inputs[Targets]
 
-        loss = self.model(y, y_pred)
+        loss = self.model(y_pred, y)
 
         return loss
+
+
+class TopKAccuracy(LossComponent):
+    def __init__(self, k: int = 1, num_classes: int = 10):
+        super(TopKAccuracy, self).__init__()
+        self._k = k
+        self._num_classes = num_classes
+
+    def forward(self, inputs: Union[Dict, Sequence]) -> Tensor:
+        predictions = inputs[Predictions]
+        targets = inputs[Targets]
+
+        acc = accuracy(
+            preds=predictions,
+            target=targets,
+            top_k=self._k,
+            num_classes=self._num_classes,
+        )
+
+        return acc
+
+
+class CrossEntropy(LossComponent):
+    def __init__(self, predictions_key: str, target_key: str):
+        super(CrossEntropy, self).__init__()
+        self._predictions_key = predictions_key
+        self._target_key = target_key
+        self.ce = nn.CrossEntropyLoss()
+
+    def forward(self, inputs: Union[Dict, Sequence]) -> Tensor:
+        predictions = inputs[self._predictions_key]
+        targets = inputs[self._target_key]
+        loss = self.ce(predictions, targets)
+
+        return loss
+

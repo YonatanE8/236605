@@ -1,11 +1,13 @@
 from abc import ABC
 from torch import nn
-from typing import List, Callable, Tuple, Sequence
+
+from AdvancedDL.src.models.moco import MoCoV2
 from AdvancedDL.src.training.logger import Logger
+from torch.utils.data.dataloader import DataLoader
+from typing import List, Callable, Tuple, Sequence
 from AdvancedDL.src.losses.losses import LossComponent
 from AdvancedDL.src.training.optimizer import Optimizer
-from torch.utils.data.dataloader import DataLoader
-from AdvancedDL.src.utils.defaults import Inputs, Outputs
+from AdvancedDL.src.utils.defaults import Inputs, Targets, Queue, Key
 
 import os
 import tqdm
@@ -59,6 +61,10 @@ class Trainer(ABC):
         self._max_iterations_per_epcoch = max_iterations_per_epcoch
         self._logger = logger
         self._save_path_dir = logger.save_dir
+
+    def set_loss_and_eval_criterions(self, loss_fn: Callable, eval_fn: Callable):
+        self._loss_fn = loss_fn
+        self._evaluation_metric = eval_fn
 
     def fit(self,
             dl_train: DataLoader,
@@ -285,7 +291,7 @@ class Trainer(ABC):
         self._optimizer.zero_grad()
 
         # Compute the loss with respect to the true labels
-        batch[Outputs] = outputs
+        batch[Targets] = outputs
         loss = self._loss_fn(batch)
 
         # Run the backwards pass
@@ -319,7 +325,7 @@ class Trainer(ABC):
             outputs = self._model.forward(x)
 
             # Compute the loss with respect to the true labels
-            batch[Outputs] = outputs
+            batch[Targets] = outputs
             loss = self._loss_fn(batch)
 
             # Compute the 'accuracy'
@@ -369,7 +375,7 @@ class Trainer(ABC):
 class MoCoTrainer(Trainer):
     def __init__(
             self,
-            model: nn.Module,
+            model: MoCoV2,
             loss_fn: LossComponent,
             evaluation_metric: LossComponent,
             optimizer: Optimizer,
@@ -378,6 +384,7 @@ class MoCoTrainer(Trainer):
                 'cuda' if torch.cuda.is_available() else 'cpu'
             ),
             max_iterations_per_epcoch: int = float('inf'),
+            self_training: bool = True,
     ):
         super(MoCoTrainer, self).__init__(
             model=model,
@@ -389,20 +396,48 @@ class MoCoTrainer(Trainer):
             max_iterations_per_epcoch=max_iterations_per_epcoch,
         )
 
-    def train_batch(self, batch, ignore_cap: bool = False) -> Tuple[float, float]:
-        # Unpack the batch
-        x = batch[Inputs]
-        x = x.to(self._device)
+        self._self_training = self_training
 
+    def freeze_model(self):
+        self._model.freeze()
+
+    def set_self_training(self, status: bool = False):
+        self._self_training = status
+
+    @property
+    def self_training(self) -> bool:
+        return self._self_training
+
+    def train_epoch(self, dl_train: DataLoader) -> Tuple[float, float]:
+        self._model.train(True)
+        if self._self_training:
+            loss, accuracy = self._foreach_batch_self_training(dl_train, self.train_batch)
+
+        else:
+            loss, accuracy = self._foreach_batch(dl_train, self.train_batch)
+
+        return np.mean(loss).item(), np.mean(accuracy).item()
+
+    def test_epoch(self, dl_test: DataLoader, ignore_cap: bool = False) -> Tuple[float, float]:
+        self._model.train(False)
+        if self._self_training:
+            loss, accuracy = self._foreach_batch_self_training(dl_test, self.test_batch, False)
+
+        else:
+            loss, accuracy = self._foreach_batch(dl_test, self.test_batch, ignore_cap)
+
+        return np.mean(loss).item(), np.mean(accuracy).item()
+
+    def train_batch(self, batch, ignore_cap: bool = False) -> Tuple[float, float]:
         # Run the forward pass
-        outputs = self._model.forward(x)
+        outputs = self._model.forward(batch)
 
         # Zero the gradients after each step
         self._optimizer.zero_grad()
 
         # Compute the loss with respect to the true labels
-        batch[Outputs] = outputs
-        loss = self._loss_fn(batch)
+        outputs[Targets] = batch[Targets]
+        loss = self._loss_fn(outputs)
 
         # Run the backwards pass
         loss.backward()
@@ -411,24 +446,128 @@ class MoCoTrainer(Trainer):
         self._optimizer.step()
 
         # Compute the 'accuracy'
-        accuracy = self._evaluation_metric(batch)
+        accuracy = self._evaluation_metric(outputs)
 
         return loss.item(), accuracy.item()
 
     def test_batch(self, batch, ignore_cap: bool = False) -> Tuple[float, float]:
-        # Unpack the batch
-        x = batch[Inputs]
-        x = x.to(self._device)
-
         with torch.no_grad():
             # Run the forward pass
-            outputs = self._model.forward(x)
+            outputs = self._model.forward(batch)
 
             # Compute the loss with respect to the true labels
-            batch[Outputs] = outputs
-            loss = self._loss_fn(batch)
+            outputs[Targets] = batch[Targets]
+            loss = self._loss_fn(outputs)
 
             # Compute the 'accuracy'
-            accuracy = self._evaluation_metric(batch)
+            accuracy = self._evaluation_metric(outputs)
 
         return loss.item(), accuracy.item()
+
+    @staticmethod
+    def _foreach_batch(
+            dl: DataLoader,
+            forward_fn: Callable,
+            ignore_cap: bool = False,
+            device: torch.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'),
+    ) -> Tuple[List, List]:
+        """
+        Evaluates the given forward-function on batches from the given
+        dataloader, and prints progress along the way.
+
+        :param dl: The DataLoader object from which to query batches.
+        :param forward_fn: The forward method to apply to each batch,
+        i.e. `train_batch` or `test_batch`.
+        :param ignore_cap: (bool) Whether to ignore the logger cap or not.
+
+        :return: A tuple of two lists, the first contains the losses over all batches in
+        the current epoch, and the second ones contains all of the accuracies.
+        """
+
+        losses = []
+        accuracies = []
+        num_batches = len(dl.batch_sampler)
+        pbar_name = forward_fn.__name__
+        with tqdm.tqdm(desc=pbar_name, total=num_batches) as pbar:
+            for batch_idx, (x, y) in enumerate(dl):
+                data = {
+                    Queue: x.to(device),
+                    Key: x.to(device),
+                    Targets: y.to(device),
+                }
+                loss, acc = forward_fn(data, ignore_cap)
+
+                pbar.set_description(f'{pbar_name} ({loss:.3f})')
+                pbar.update()
+
+                losses.append(loss)
+                accuracies.append(acc)
+
+            avg_loss = np.mean(losses).item()
+            avg_acc = np.mean(accuracies).item()
+            pbar.set_description(
+                f'{pbar_name} (Avg. Loss {avg_loss:.3f}, '
+                f'Avg. Accuracy {avg_acc:.3f})'
+            )
+
+        return losses, accuracies
+
+    @staticmethod
+    def _foreach_batch_self_training(
+            dl: DataLoader,
+            forward_fn: Callable,
+            ignore_cap: bool = False,
+            device: torch.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'),
+    ) -> Tuple[List, List]:
+        losses = []
+        accuracies = []
+        num_batches = len(dl.batch_sampler)
+        pbar_name = forward_fn.__name__
+        with tqdm.tqdm(desc=pbar_name, total=num_batches) as pbar:
+            for batch_idx, (x, _) in enumerate(dl):
+                data = {
+                    Queue: x[0].to(device),
+                    Key: x[1].to(device),
+                    Targets: None,
+                }
+                loss, acc = forward_fn(data, ignore_cap)
+
+                pbar.set_description(f'{pbar_name} ({loss:.3f})')
+                pbar.update()
+
+                losses.append(loss)
+                accuracies.append(acc)
+
+            avg_loss = np.mean(losses).item()
+            avg_acc = np.mean(accuracies).item()
+            pbar.set_description(
+                f'{pbar_name} (Avg. Loss {avg_loss:.3f}, '
+                f'Avg. Accuracy {avg_acc:.3f})'
+            )
+
+        return losses, accuracies
+
+    def fit(self,
+            dl_train: DataLoader,
+            dl_val: DataLoader,
+            num_epochs: int = 10,
+            checkpoints: bool = False,
+            checkpoints_mode: str = 'min',
+            early_stopping: int = None,
+            ) -> Tuple[Sequence[float], Sequence[float],
+                       Sequence[float], Sequence[float]]:
+
+        if self.self_training:
+            self._model.set_self_training(True)
+
+        else:
+            self._model.set_self_training(False)
+
+        return super().fit(
+            dl_train=dl_train,
+            dl_val=dl_val,
+            num_epochs=num_epochs,
+            checkpoints=checkpoints,
+            checkpoints_mode=checkpoints_mode,
+            early_stopping=early_stopping,
+        )

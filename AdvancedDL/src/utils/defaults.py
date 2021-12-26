@@ -1,7 +1,6 @@
 Inputs = 'x'
-Outputs = 'y'
+Targets = 'y'
 Queue = 'q'
 Key = 'k'
 Predictions = 'y_pred'
-Logits = 'logits'
-
+Labels = 'labels'

@@ -1,8 +1,8 @@
-from torch import nn, Tensor, functional
-from typing import Sequence, Dict, Callable
+from torch import nn, Tensor
 from AdvancedDL.src.models.fc import MLP
+from typing import Sequence, Dict, Callable, cast
 from AdvancedDL.src.models.resnet import resnet50
-from AdvancedDL.src.utils.defaults import Queue, Key, Logits, Predictions
+from AdvancedDL.src.utils.defaults import Queue, Key, Predictions, Labels
 
 import copy
 import torch
@@ -11,7 +11,7 @@ import torch
 class MoCoV2(nn.Module):
     def __init__(
             self,
-            input_dim: int,
+            in_channels: int = 3,
             encoder_builder: Callable = resnet50,
             queue_size: int = 65536,
             momentum: float = 0.999,
@@ -25,7 +25,8 @@ class MoCoV2(nn.Module):
                 'units_grow_rate': 1,
                 'bias': True,
                 'activation': 'relu',
-            }
+            },
+            self_training: bool = True,
     ):
         super(MoCoV2, self).__init__()
 
@@ -33,7 +34,7 @@ class MoCoV2(nn.Module):
         self.momentum = momentum
         self.temperature = temperature
         resnet = encoder_builder(
-            input_dim=input_dim,
+            in_channels=in_channels,
             **resnet_kwargs
         )
         mlp = MLP(
@@ -53,8 +54,8 @@ class MoCoV2(nn.Module):
             param.requires_grad = False
 
         # Create the queue
-        self.register_buffer("queue", torch.randn(input_dim, queue_size))
-        self.queue = functional.normalize(self.queue, dim=0)
+        self.register_buffer("queue", torch.randn(in_channels, queue_size))
+        self.queue = torch.nn.functional.normalize(self.queue, dim=0)
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
 
         # Create the linear layer for later use
@@ -66,7 +67,7 @@ class MoCoV2(nn.Module):
             units_grow_rate=1,
             bias=True,
         )
-        self.mode = 0
+        self._self_training = self_training
 
     @torch.no_grad()
     def _update_key_encoder(self):
@@ -80,15 +81,15 @@ class MoCoV2(nn.Module):
     def _dequeue_and_enqueue(self, keys: Tensor):
         bs = keys.shape[0]
         ptr = int(self.queue_ptr)
-        assert self.K % bs == 0
+        assert self.queue_size % bs == 0
 
         self.queue[:, ptr:(ptr + bs)] = keys.T
-        ptr = (ptr + bs) % self.K
+        ptr = (ptr + bs) % self.queue_size
 
         self.queue_ptr[0] = ptr
 
-    def update_mode(self, mode: int = 0):
-        self.mode = mode
+    def set_self_training(self, status: bool = False):
+        self._self_training = status
 
     def pre_training_params(self) -> Sequence[nn.Parameter]:
         params = list(self.resnet.parameters())
@@ -99,22 +100,34 @@ class MoCoV2(nn.Module):
         params = list(self.linear_mlp.parameters())
         return params
 
+    def freeze(self):
+        for name, param in self.named_parameters():
+            if 'linear_mlp' not in name:
+                param.requires_grad = False
+
     def forward(self, inputs: dict) -> Dict[str, Tensor]:
         in_q = inputs[Queue]
         in_k = inputs[Key]
 
         # Compute queue features
         q = self.resnet_q(in_q)
-        q = self.mlp_q(q)
-        q = functional.normalize(q, dim=1)
+
+        if not self._self_training:
+            # Linear predictor
+            q = self.linear_mlp(q)
+
+        else:
+            # MLP predictor
+            q = self.mlp_q(q)
+
+        q = torch.nn.functional.normalize(q, dim=1)
 
         # Compute key features
         with torch.no_grad():
-            self._momentum_update_key_encoder()
-
+            self._update_key_encoder()
             k = self.resnet_k(in_k)
             k = self.mlp_k(k)
-            k = functional.normalize(k, dim=1)
+            k = torch.nn.functional.normalize(k, dim=1)
 
         # Compute logits
         positive_logits = torch.einsum('nc,nc->n', [q, k]).unsqueeze(-1)
@@ -122,15 +135,19 @@ class MoCoV2(nn.Module):
         logits = torch.cat([positive_logits, negative_logits], dim=1)
 
         # apply temperature
-        logits = logits / self.temperature
-        labels = torch.zeros(logits.shape[0], dtype=torch.long).cuda()
+        logits = (logits / self.temperature).type(torch.double)
+        labels = torch.zeros(logits.shape[0], dtype=torch.long).to(logits.device)
 
         # dequeue and enqueue
         self._dequeue_and_enqueue(k)
 
         outputs = {
-            Logits: logits,
-            Predictions: labels,
+            Predictions: logits,
+            Labels: labels,
         }
 
         return outputs
+
+    def __call__(self, inputs: dict) -> Dict[str, Tensor]:
+        return self.forward(inputs=inputs)
+
