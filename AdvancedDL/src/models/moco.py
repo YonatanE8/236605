@@ -1,7 +1,7 @@
 from torch import nn, Tensor
 from AdvancedDL.src.models.fc import MLP
 from typing import Sequence, Dict, Callable
-from AdvancedDL.src.models.resnet import resnet50
+from AdvancedDL.src.models.resnet import resnet50, IdentityLayer
 from AdvancedDL.src.utils.defaults import Queue, Key, Predictions, Labels
 
 import copy
@@ -127,17 +127,19 @@ class MoCoV2(nn.Module):
             with torch.no_grad():
                 self._update_key_encoder()
 
-                # Shuffle the entries for batch norm
-                bs = in_q.shape[0]
-                shuffle_indices = torch.randperm(bs)
-                in_k = in_k[shuffle_indices]
+                if not isinstance(self.resnet_q._norm_layer, IdentityLayer):
+                    # Shuffle the entries for batch norm
+                    bs = in_q.shape[0]
+                    shuffle_indices = torch.randperm(bs)
+                    in_k = in_k[shuffle_indices]
 
                 k = self.resnet_k(in_k)
                 k = self.mlp_k(k)
                 k = torch.nn.functional.normalize(k, dim=1)
 
-                # Un-shuffle the entries for batch norm
-                k = k[shuffle_indices]
+                if not isinstance(self.resnet_q._norm_layer, IdentityLayer):
+                    # Un-shuffle the entries for batch norm
+                    k = k[shuffle_indices]
 
             # Compute logits
             positive_logits = torch.einsum('nc,nc->n', [q, k]).unsqueeze(-1)
