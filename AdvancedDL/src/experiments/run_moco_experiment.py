@@ -38,7 +38,7 @@ data_parallel = True
 device_ids = [0, 1, 2, 3]
 num_workers = 32
 pin_memory = True
-batch_size = 256
+batch_size = 128
 self_train_dl = DataLoader(
     dataset=imagenette_self_train_ds,
     batch_size=batch_size,
@@ -66,7 +66,7 @@ val_dl = DataLoader(
 in_channels = 3
 encoder_builder = resnet50
 # encoder_builder = resnet18
-queue_size = 65536
+queue_size = 8192
 if data_parallel:
     queue_size /= len(device_ids)
     queue_size = int(queue_size)
@@ -124,7 +124,7 @@ optimizers_params = (
     #     'weight_decay': 1e-4,
     # },
     {
-        'lr': 0.1,
+        'lr': 0.01,
         'momentum': 0.9,
         'weight_decay': 0,
     },
