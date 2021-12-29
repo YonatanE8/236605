@@ -1,7 +1,7 @@
 import os
 
-# os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+os.environ['CUDA_VISIBLE_DEVICES'] = '4,5,6,7'
 
 from datetime import datetime
 from AdvancedDL import LOGS_DIR
@@ -35,7 +35,7 @@ os.makedirs(logs_dir, exist_ok=True)
 
 # Define the Datasets & Data loaders
 data_parallel = True
-device_ids = [4, 5, 6, 7]
+device_ids = [0, 1, 2, 3]
 num_workers = 32
 pin_memory = True
 batch_size = 256
@@ -116,7 +116,7 @@ if data_parallel:
 # Define the optimizer
 optimizers_types = (
     # torch.optim.AdamW,
-    torch.optim.SGD
+    torch.optim.SGD,
 )
 optimizers_params = (
     # {
