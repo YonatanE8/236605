@@ -414,7 +414,11 @@ class MoCoTrainer(Trainer):
         self._self_training = self_training
 
     def freeze_model(self):
-        self._model.freeze()
+        if isinstance(self._model, torch.nn.DataParallel):
+            self._model.module.freeze()
+
+        else:
+            self._model.freeze()
 
     def set_self_training(self, status: bool = False):
         self._self_training = status
@@ -611,10 +615,18 @@ class MoCoTrainer(Trainer):
                        Sequence[float], Sequence[float]]:
 
         if self.self_training:
-            self._model.set_self_training(True)
+            if isinstance(self._model, torch.nn.DataParallel):
+                self._model.module.set_self_training(True)
+
+            else:
+                self._model.set_self_training(True)
 
         else:
-            self._model.set_self_training(False)
+            if isinstance(self._model, torch.nn.DataParallel):
+                self._model.module.set_self_training(False)
+
+            else:
+                self._model.set_self_training(False)
 
         return super().fit(
             dl_train=dl_train,

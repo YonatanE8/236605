@@ -28,12 +28,14 @@ torch.manual_seed(seed)
 # Define the log dir
 date = str(datetime.today()).split()[0]
 experiment_name = f"MoCoV2_{date}"
-log_dir = LOGS_DIR
-# log_dir = '/mnt/walkure_pub/yonatane/logs/'
+# log_dir = LOGS_DIR
+log_dir = '/mnt/walkure_pub/yonatane/logs/'
 logs_dir = os.path.join(log_dir, experiment_name)
 os.makedirs(logs_dir, exist_ok=True)
 
 # Define the Datasets & Data loaders
+data_parallel = True
+device_ids = [4, 5, 6, 7]
 num_workers = 32
 pin_memory = True
 batch_size = 256
@@ -43,6 +45,7 @@ self_train_dl = DataLoader(
     shuffle=True,
     num_workers=num_workers,
     pin_memory=pin_memory,
+    drop_last=True,
 )
 train_dl = DataLoader(
     dataset=imagenette_train_ds,
@@ -64,6 +67,10 @@ in_channels = 3
 encoder_builder = resnet50
 # encoder_builder = resnet18
 queue_size = 65536
+if data_parallel:
+    queue_size /= len(device_ids)
+    queue_size = int(queue_size)
+
 momentum = 0.999
 temperature = 0.2
 resnet_kwargs = {
@@ -76,7 +83,7 @@ n_classes = 10
 n_layers = 2
 units_grow_rate = 1
 l0_units = 2048
-bias = True
+bias = False
 activation = 'relu'
 mlp_params = {
     'in_channels': 10,
@@ -103,12 +110,23 @@ model = MoCoV2(
 )
 model.to(device)
 
+if data_parallel:
+    model = torch.nn.DataParallel(model, device_ids=device_ids)
+
 # Define the optimizer
-optimizers_types = (torch.optim.AdamW,)
+optimizers_types = (
+    # torch.optim.AdamW,
+    torch.optim.SGD
+)
 optimizers_params = (
+    # {
+    #     'lr': 0.001,
+    #     'weight_decay': 1e-4,
+    # },
     {
-        'lr': 0.001,
-        'weight_decay': 1e-4,
+        'lr': 0.1,
+        'momentum': 0.9,
+        'weight_decay': 0,
     },
 )
 
@@ -159,7 +177,7 @@ evaluation_metric = CrossEntropy(
 )
 
 # Define the logger
-max_elements = 100
+max_elements = 1000000000000
 logger = Logger(
     log_dir=logs_dir,
     experiment_name="SelfTraining",
@@ -203,16 +221,24 @@ if __name__ == '__main__':
     model = MoCoV2(
         **model_params
     )
+    model.to(device)
+    if data_parallel:
+        model = torch.nn.DataParallel(model, device_ids=device_ids)
+
     model_ckpt_path = f"{os.path.join(logs_dir, 'SelfTraining')}/BestModel.PyTorchModule"
     model_ckp = torch.load(model_ckpt_path)
     model.load_state_dict(model_ckp['model'])
-    model.to(device)
 
     # Define a new optimizer for the fine-tuning phase
     optimizers_params = (
+        # {
+        #     'lr': 0.01,
+        #     'weight_decay': 1e-4,
+        # },
         {
-            'lr': 0.01,
-            'weight_decay': 1e-4,
+            'lr': 30,
+            'momentum': 0.9,
+            'weight_decay': 0,
         },
     )
     optimizer_init_params = {
@@ -267,10 +293,13 @@ if __name__ == '__main__':
     model = MoCoV2(
         **model_params
     )
+    model.to(device)
+    if data_parallel:
+        model = torch.nn.DataParallel(model, device_ids=device_ids)
+
     model_ckpt_path = f"{logs_dir}/BestModel.PyTorchModule"
     model_ckp = torch.load(model_ckpt_path)
     model.load_state_dict(model_ckp['model'])
-    model.to(device)
 
     trainer = MoCoTrainer(
         model=model,
