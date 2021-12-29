@@ -74,8 +74,8 @@ if data_parallel:
 momentum = 0.999
 temperature = 0.2
 resnet_kwargs = {
-    #  'norm_layer': None,
-    'norm_layer': IdentityLayer,
+     'norm_layer': None,
+    # 'norm_layer': IdentityLayer,
     # 'norm_layer': torch.nn.InstanceNorm2d,
 
 }
