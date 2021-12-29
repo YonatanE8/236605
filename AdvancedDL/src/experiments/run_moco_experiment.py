@@ -116,7 +116,7 @@ if data_parallel:
 # Define the optimizer
 optimizers_types = (
     # torch.optim.AdamW,
-    torch.optim.SGD
+    torch.optim.SGD,
 )
 optimizers_params = (
     # {
