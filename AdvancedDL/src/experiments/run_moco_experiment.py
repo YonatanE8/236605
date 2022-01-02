@@ -172,7 +172,10 @@ loss_fn = CrossEntropy(
     predictions_key=Predictions,
     target_key=Labels,
 )
-evaluation_metric = ContrastiveAccuracy()
+evaluation_metric = ContrastiveAccuracy(
+    predictions_key=Predictions,
+    target_key=Labels,
+)
 
 # Define the logger
 max_elements = 1000000000000

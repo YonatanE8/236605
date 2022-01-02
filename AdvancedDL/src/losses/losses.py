@@ -77,8 +77,10 @@ class ModuleLoss(LossComponent):
 
 
 class ContrastiveAccuracy(LossComponent):
-    def __init__(self):
-        super(ContrastiveAccuracy, self).__init__()
+    def __init__(self, predictions_key: str, target_key: str):
+        super().__init__()
+        self._predictions_key = predictions_key
+        self._target_key = target_key
 
     def forward(self, inputs: Union[Dict, Sequence]) -> Tensor:
         targets = inputs[self._target_key]
