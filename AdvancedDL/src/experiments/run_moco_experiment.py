@@ -201,7 +201,7 @@ trainer = MoCoTrainer(
 if __name__ == '__main__':
     # Start the self-training phase
     print("Pre-training the model")
-    num_epochs = 1000
+    num_epochs = 250
     checkpoints = True
     early_stopping = None
     checkpoints_mode = 'min'
