@@ -4,6 +4,8 @@ from typing import Sequence, Union, Dict
 from torchmetrics.functional import accuracy
 from AdvancedDL.src.utils.defaults import Predictions, Targets
 
+import torch
+
 
 class LossComponent(nn.Module, ABC):
     """
@@ -72,6 +74,20 @@ class ModuleLoss(LossComponent):
         loss = self.model(y_pred, y)
 
         return loss
+
+
+class ContrastiveAccuracy(LossComponent):
+    def __init__(self):
+        super(ContrastiveAccuracy, self).__init__()
+
+    def forward(self, inputs: Union[Dict, Sequence]) -> Tensor:
+        targets = inputs[self._target_key]
+        predictions = inputs[self._predictions_key]
+        predictions = torch.argmax(predictions)
+        acc = ((predictions - targets).abs() == 0).sum()
+        acc = acc / targets.shape[0]
+
+        return acc
 
 
 class TopKAccuracy(LossComponent):

@@ -1,7 +1,7 @@
 import os
 
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,2,4,6'
+os.environ['CUDA_VISIBLE_DEVICES'] = '2,4'
 
 from datetime import datetime
 from AdvancedDL import LOGS_DIR
@@ -10,7 +10,7 @@ from AdvancedDL.src.models.moco import MoCoV2
 from AdvancedDL.src.training.logger import Logger
 from AdvancedDL.src.training.trainer import MoCoTrainer
 from AdvancedDL.src.training.optimizer import OptimizerInitializer
-from AdvancedDL.src.losses.losses import CrossEntropy, TopKAccuracy
+from AdvancedDL.src.losses.losses import CrossEntropy, TopKAccuracy, ContrastiveAccuracy
 from AdvancedDL.src.utils.defaults import Predictions, Labels, Targets
 from AdvancedDL.src.models.resnet import resnet18, resnet50, IdentityLayer
 from AdvancedDL.src.data.datasets import imagenette_train_ds, imagenette_val_ds, imagenette_self_train_ds
@@ -28,17 +28,17 @@ torch.manual_seed(seed)
 # Define the log dir
 date = str(datetime.today()).split()[0]
 experiment_name = f"MoCoV2_{date}"
-log_dir = LOGS_DIR
-# log_dir = '/mnt/walkure_pub/yonatane/logs/'
+# log_dir = LOGS_DIR
+log_dir = '/mnt/walkure_pub/yonatane/logs/'
 logs_dir = os.path.join(log_dir, experiment_name)
 os.makedirs(logs_dir, exist_ok=True)
 
 # Define the Datasets & Data loaders
-data_parallel = False
-device_ids = [0, 1, 2, 3]
-num_workers = 16
+data_parallel = True
+device_ids = [0, 1]
+num_workers = 32
 pin_memory = True
-batch_size = 64
+batch_size = 128
 self_train_dl = DataLoader(
     dataset=imagenette_self_train_ds,
     batch_size=batch_size,
@@ -67,7 +67,7 @@ in_channels = 3
 encoder_builder = resnet50
 # encoder_builder = resnet18
 # queue_size = 8192
-queue_size = 1024
+queue_size = 256
 if data_parallel:
     queue_size /= len(device_ids)
     queue_size = int(queue_size)
@@ -121,7 +121,7 @@ optimizers_types = (
 )
 optimizers_params = (
     {
-        'lr': 0.001,
+        'lr': 0.0001,
         'weight_decay': 1e-4,
     },
     # {
@@ -172,10 +172,7 @@ loss_fn = CrossEntropy(
     predictions_key=Predictions,
     target_key=Labels,
 )
-evaluation_metric = CrossEntropy(
-    predictions_key=Predictions,
-    target_key=Labels,
-)
+evaluation_metric = ContrastiveAccuracy()
 
 # Define the logger
 max_elements = 1000000000000
