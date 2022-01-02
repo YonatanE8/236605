@@ -142,7 +142,7 @@ class MoCoV2(nn.Module):
 
                 if not isinstance(self.resnet_q._norm_layer, IdentityLayer):
                     # Un-shuffle the entries for batch norm
-                    un_shuffled_indices = torch.argsort(shuffle_indices).type(torch.int).to(k.device)
+                    un_shuffled_indices = torch.argsort(shuffle_indices).to(k.device)
                     k = k[un_shuffled_indices]
 
             # Compute logits
