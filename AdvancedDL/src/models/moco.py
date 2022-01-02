@@ -67,6 +67,10 @@ class MoCoV2(nn.Module):
             units_grow_rate=1,
             bias=True,
         )
+
+        # Create a sigmoid layer for the logits
+        self.sigmoid = nn.Sigmoid()
+
         self._self_training = self_training
 
     @torch.no_grad()
@@ -158,6 +162,8 @@ class MoCoV2(nn.Module):
 
             # dequeue and enqueue
             self._dequeue_and_enqueue(k)
+
+        logits = self.sigmoid(logits)
 
         outputs = {
             Predictions: logits,

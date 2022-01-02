@@ -28,17 +28,17 @@ torch.manual_seed(seed)
 # Define the log dir
 date = str(datetime.today()).split()[0]
 experiment_name = f"MoCoV2_{date}"
-# log_dir = LOGS_DIR
-log_dir = '/mnt/walkure_pub/yonatane/logs/'
+log_dir = LOGS_DIR
+# log_dir = '/mnt/walkure_pub/yonatane/logs/'
 logs_dir = os.path.join(log_dir, experiment_name)
 os.makedirs(logs_dir, exist_ok=True)
 
 # Define the Datasets & Data loaders
-data_parallel = True
+data_parallel = False
 device_ids = [0, 1, 2, 3]
-num_workers = 64
+num_workers = 16
 pin_memory = True
-batch_size = 256
+batch_size = 64
 self_train_dl = DataLoader(
     dataset=imagenette_self_train_ds,
     batch_size=batch_size,
@@ -66,7 +66,8 @@ val_dl = DataLoader(
 in_channels = 3
 encoder_builder = resnet50
 # encoder_builder = resnet18
-queue_size = 8192
+# queue_size = 8192
+queue_size = 1024
 if data_parallel:
     queue_size /= len(device_ids)
     queue_size = int(queue_size)
@@ -115,19 +116,19 @@ if data_parallel:
 
 # Define the optimizer
 optimizers_types = (
-    # torch.optim.AdamW,
-    torch.optim.SGD,
+    torch.optim.AdamW,
+    # torch.optim.SGD,
 )
 optimizers_params = (
-    # {
-    #     'lr': 0.001,
-    #     'weight_decay': 1e-4,
-    # },
     {
-        'lr': 0.01,
-        'momentum': 0.9,
-        'weight_decay': 0,
+        'lr': 0.001,
+        'weight_decay': 1e-4,
     },
+    # {
+    #     'lr': 0.01,
+    #     'momentum': 0.9,
+    #     'weight_decay': 0,
+    # },
 )
 
 schedulers_types = (
@@ -231,15 +232,15 @@ if __name__ == '__main__':
 
     # Define a new optimizer for the fine-tuning phase
     optimizers_params = (
-        # {
-        #     'lr': 0.01,
-        #     'weight_decay': 1e-4,
-        # },
         {
-            'lr': 30,
-            'momentum': 0.9,
-            'weight_decay': 0,
+            'lr': 0.1,
+            'weight_decay': 1e-4,
         },
+        # {
+        #     'lr': 30,
+        #     'momentum': 0.9,
+        #     'weight_decay': 0,
+        # },
     )
     optimizer_init_params = {
         'optimizers_types': optimizers_types,
