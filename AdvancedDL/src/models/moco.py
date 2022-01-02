@@ -142,19 +142,19 @@ class MoCoV2(nn.Module):
 
                 if not isinstance(self.resnet_q._norm_layer, IdentityLayer):
                     # Un-shuffle the entries for batch norm
-                    k = k[shuffle_indices]
+                    un_shuffled_indices = torch.argsort(shuffle_indices).type(torch.int)
+                    k = k[un_shuffled_indices]
 
             # Compute logits
             positive_logits = torch.einsum('nc,nc->n', [q, k]).unsqueeze(-1)
             negative_logits = torch.einsum('nc,ck->nk', [q, self.queue.clone().detach()])
 
             # Insert the positive logit in a random index
-            rand_int = torch.randint(low=1, high=negative_logits.shape[0], size=(1, )).to(positive_logits.device)
-            logits = torch.cat([negative_logits[:, :rand_int], positive_logits, negative_logits[:, rand_int:]], dim=1)
+            logits = torch.cat([positive_logits, negative_logits], dim=1)
 
             # apply temperature
             logits = (logits / self.temperature).type(torch.double)
-            labels = rand_int * torch.ones(logits.shape[0], dtype=torch.long).to(logits.device)
+            labels = torch.zeros(logits.shape[0], dtype=torch.long).to(logits.device)
 
             # dequeue and enqueue
             self._dequeue_and_enqueue(k)
