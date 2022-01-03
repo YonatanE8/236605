@@ -1,7 +1,7 @@
 import os
 
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-os.environ['CUDA_VISIBLE_DEVICES'] = '2,4'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3,4'
 
 from datetime import datetime
 from AdvancedDL import LOGS_DIR
@@ -10,7 +10,7 @@ from AdvancedDL.src.models.moco import MoCoV2
 from AdvancedDL.src.training.logger import Logger
 from AdvancedDL.src.training.trainer import MoCoTrainer
 from AdvancedDL.src.training.optimizer import OptimizerInitializer
-from AdvancedDL.src.losses.losses import CrossEntropy, TopKAccuracy, ContrastiveAccuracy
+from AdvancedDL.src.losses.losses import BinaryCrossEntropy, CrossEntropy, TopKAccuracy, ContrastiveAccuracy
 from AdvancedDL.src.utils.defaults import Predictions, Labels, Targets
 from AdvancedDL.src.models.resnet import resnet18, resnet50, IdentityLayer
 from AdvancedDL.src.data.datasets import imagenette_train_ds, imagenette_val_ds, imagenette_self_train_ds
@@ -26,8 +26,13 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 
 # Define the log dir
+self_training_num_epochs = 1500
+supervised_training_num_epochs = 1500
+
+# encoder_builder = resnet50
+encoder_builder = resnet18
 date = str(datetime.today()).split()[0]
-experiment_name = f"MoCoV2_{date}"
+experiment_name = f"MoCoV2_{'ResNet50' if encoder_builder == resnet50 else 'ResNet18'}_{self_training_num_epochs}_STE_{supervised_training_num_epochs}_E_{date}"
 # log_dir = LOGS_DIR
 log_dir = '/mnt/walkure_pub/yonatane/logs/'
 logs_dir = os.path.join(log_dir, experiment_name)
@@ -35,10 +40,10 @@ os.makedirs(logs_dir, exist_ok=True)
 
 # Define the Datasets & Data loaders
 data_parallel = True
-device_ids = [0, 1]
+device_ids = [0, 1,]
 num_workers = 32
 pin_memory = True
-batch_size = 128
+batch_size = 64
 self_train_dl = DataLoader(
     dataset=imagenette_self_train_ds,
     batch_size=batch_size,
@@ -64,10 +69,8 @@ val_dl = DataLoader(
 
 # Define the model
 in_channels = 3
-encoder_builder = resnet50
-# encoder_builder = resnet18
 # queue_size = 8192
-queue_size = 256
+queue_size = 128
 if data_parallel:
     queue_size /= len(device_ids)
     queue_size = int(queue_size)
@@ -84,7 +87,7 @@ n_classes = 10
 n_layers = 2
 units_grow_rate = 1
 l0_units = 2048
-bias = False
+bias = True
 activation = 'relu'
 mlp_params = {
     'in_channels': 10,
@@ -116,7 +119,7 @@ if data_parallel:
 
 # Define the optimizer
 optimizers_types = (
-    torch.optim.AdamW,
+     torch.optim.AdamW,
     # torch.optim.SGD,
 )
 optimizers_params = (
@@ -125,9 +128,9 @@ optimizers_params = (
         'weight_decay': 1e-4,
     },
     # {
-    #     'lr': 0.01,
+    #     'lr': 0.1,
     #     'momentum': 0.9,
-    #     'weight_decay': 0,
+    #     'weight_decay': 1e-6,
     # },
 )
 
@@ -168,7 +171,7 @@ model_parameters = (model.parameters(),)
 optimizer = optimizer.initialize(model_parameters)
 
 # Define the loss & evaluation functions
-loss_fn = CrossEntropy(
+loss_fn = BinaryCrossEntropy(
     predictions_key=Predictions,
     target_key=Labels,
 )
@@ -201,14 +204,13 @@ trainer = MoCoTrainer(
 if __name__ == '__main__':
     # Start the self-training phase
     print("Pre-training the model")
-    num_epochs = 250
     checkpoints = True
     early_stopping = None
     checkpoints_mode = 'min'
     trainer.fit(
         dl_train=self_train_dl,
         dl_val=self_train_dl,
-        num_epochs=num_epochs,
+        num_epochs=self_training_num_epochs,
         checkpoints=checkpoints,
         checkpoints_mode=checkpoints_mode,
         early_stopping=early_stopping,
@@ -231,16 +233,20 @@ if __name__ == '__main__':
     model.load_state_dict(model_ckp['model'])
 
     # Define a new optimizer for the fine-tuning phase
+    optimizers_types = (
+        # torch.optim.AdamW,
+        torch.optim.SGD,
+    )
     optimizers_params = (
-        {
-            'lr': 0.1,
-            'weight_decay': 1e-4,
-        },
         # {
-        #     'lr': 30,
-        #     'momentum': 0.9,
-        #     'weight_decay': 0,
+        #    'lr': 0.1,
+        #     'weight_decay': 1e-4,
         # },
+        {
+            'lr': 30,
+            'momentum': 0.9,
+            'weight_decay': 0,
+        },
     )
     optimizer_init_params = {
         'optimizers_types': optimizers_types,
@@ -251,7 +257,7 @@ if __name__ == '__main__':
     optimizer = OptimizerInitializer(
         **optimizer_init_params
     )
-    model_parameters = (model.linear_params(),)
+    model_parameters = (model.parameters(),)
     optimizer = optimizer.initialize(model_parameters)
 
     # Set up the appropriate loss function, accuracy criterion and logger
@@ -278,12 +284,14 @@ if __name__ == '__main__':
         self_training=False,
         max_iterations_per_epoch=max_iterations_per_epoch,
     )
+    # Freeze all weights which are not part of the linear classifier
     trainer.freeze_model()
+
     checkpoints_mode = 'max'
     trainer.fit(
         dl_train=train_dl,
         dl_val=val_dl,
-        num_epochs=num_epochs,
+        num_epochs=supervised_training_num_epochs,
         checkpoints=checkpoints,
         checkpoints_mode=checkpoints_mode,
         early_stopping=early_stopping,

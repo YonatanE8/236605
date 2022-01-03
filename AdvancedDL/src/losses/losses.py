@@ -126,3 +126,19 @@ class CrossEntropy(LossComponent):
 
         return loss
 
+
+class BinaryCrossEntropy(LossComponent):
+    def __init__(self, predictions_key: str, target_key: str):
+        super(BinaryCrossEntropy, self).__init__()
+        self._predictions_key = predictions_key
+        self._target_key = target_key
+        self.bce = nn.BCEWithLogitsLoss()
+
+    def forward(self, inputs: Union[Dict, Sequence]) -> Tensor:
+        predictions = inputs[self._predictions_key]
+        predictions = torch.cat([predictions[:, 0], predictions[:, 1:].reshape(-1)])
+        targets = inputs[self._target_key]
+        loss = self.bce(predictions, targets.type(torch.double))
+
+        return loss
+

@@ -116,16 +116,7 @@ class MoCoV2(nn.Module):
         # Compute queue features
         q = self.resnet_q(in_q)
 
-        if not self._self_training:
-            # Linear predictor
-            q = self.linear_mlp(q)
-            q = torch.nn.functional.normalize(q, dim=1)
-
-            # apply temperature
-            logits = (q / self.temperature).type(torch.double)
-            labels = torch.ones(logits.shape[0], dtype=torch.long).to(logits.device)
-
-        else:
+        if self._self_training:
             # MLP predictor
             q = self.mlp_q(q)
             q = torch.nn.functional.normalize(q, dim=1)
@@ -149,24 +140,50 @@ class MoCoV2(nn.Module):
                     un_shuffled_indices = torch.argsort(shuffle_indices).to(k.device)
                     k = k[un_shuffled_indices]
 
+                # dequeue and enqueue
+                if self.training:
+                    self._dequeue_and_enqueue(k)
+
             # Compute logits
             positive_logits = torch.einsum('nc,nc->n', [q, k]).unsqueeze(-1)
             negative_logits = torch.einsum('nc,ck->nk', [q, self.queue.clone().detach()])
 
             # Insert the positive logit in a random index
+            # rand_ind = torch.randint(low=0, high=negative_logits.shape[0], size=(1, )).to(positive_logits.device)
+            # logits = torch.cat([negative_logits[:, :rand_ind], positive_logits, negative_logits[:, rand_ind:]], dim=1)
             logits = torch.cat([positive_logits, negative_logits], dim=1)
 
             # apply temperature
+            # logits = (self.temperature / logits).type(torch.double)
+            # labels = rand_ind * torch.ones(logits.shape[0], dtype=torch.long).to(logits.device)
+
             logits = (logits / self.temperature).type(torch.double)
             labels = torch.zeros(logits.shape[0], dtype=torch.long).to(logits.device)
+            labels = torch.cat(
+                [
+                    labels,
+                    torch.ones(
+                        size=(logits.shape[0] * (logits.shape[1] - 1), ),
+                        device=logits.device,
+                        dtype=torch.long,
+                    )
+                ]
+            )
 
-            # dequeue and enqueue
-            self._dequeue_and_enqueue(k)
+        else:
+            # Linear predictor
+            q = self.linear_mlp(q)
+            q = torch.nn.functional.normalize(q, dim=1)
 
-        logits = self.sigmoid(logits)
+            # apply temperature
+            logits = (q / self.temperature).type(torch.double)
+            labels = torch.ones(logits.shape[0], dtype=torch.long).to(logits.device)
+
+        # predictions = self.sigmoid(logits)
+        predictions = logits
 
         outputs = {
-            Predictions: logits,
+            Predictions: predictions,
             Labels: labels,
         }
 
