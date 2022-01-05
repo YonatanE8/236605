@@ -1,10 +1,8 @@
 from torch import nn, Tensor
-from AdvancedDL.src.models.fc import MLP
-from typing import Sequence, Dict, Callable
-from AdvancedDL.src.models.resnet import resnet50, IdentityLayer
+from typing import Dict, Callable
+from AdvancedDL.src.models import resnet as resnets
 from AdvancedDL.src.utils.defaults import Queue, Key, Predictions, Labels
 
-import copy
 import torch
 
 
@@ -12,7 +10,7 @@ class MoCoV2(nn.Module):
     def __init__(
             self,
             in_channels: int = 3,
-            encoder_builder: Callable = resnet50,
+            encoder_builder: Callable = resnets.resnet50,
             queue_size: int = 65536,
             momentum: float = 0.999,
             temperature: float = 0.2,
@@ -24,18 +22,27 @@ class MoCoV2(nn.Module):
         self.queue_size = queue_size
         self.momentum = momentum
         self.temperature = temperature
-        self._out_feature_dim = 128
 
         # Create the ResNet back-bone with non-linear MLP
+        if encoder_builder == resnets.resnet50 or encoder_builder == resnets.resnet101:
+            in_features = 2048
+            out_features = 4096
+            self._out_feature_dim = 2048
+
+        elif encoder_builder == resnets.resnet18 or encoder_builder == resnets.resnet34:
+            in_features = 512
+            out_features = 1024
+            self._out_feature_dim = 512
+
         resnet = encoder_builder(
             in_channels=in_channels,
             **resnet_kwargs
         )
         mlp = nn.Sequential(
-            nn.Linear(in_features=512, out_features=2048, bias=False),
-            nn.BatchNorm1d(2048),
+            nn.Linear(in_features=in_features, out_features=out_features, bias=False),
+            nn.BatchNorm1d(out_features),
             nn.ReLU(inplace=True),
-            nn.Linear(in_features=2048, out_features=self._out_feature_dim, bias=True),
+            nn.Linear(in_features=out_features, out_features=self._out_feature_dim, bias=True),
         )
         resnet.fc = mlp
 
@@ -46,10 +53,10 @@ class MoCoV2(nn.Module):
             **resnet_kwargs
         )
         mlp = nn.Sequential(
-            nn.Linear(in_features=512, out_features=2048, bias=False),
-            nn.BatchNorm1d(2048),
+            nn.Linear(in_features=in_features, out_features=out_features, bias=False),
+            nn.BatchNorm1d(out_features),
             nn.ReLU(inplace=True),
-            nn.Linear(in_features=2048, out_features=self._out_feature_dim, bias=True),
+            nn.Linear(in_features=out_features, out_features=self._out_feature_dim, bias=True),
         )
         resnet.fc = mlp
         self.resnet_k = resnet
@@ -63,7 +70,7 @@ class MoCoV2(nn.Module):
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
 
         # Create the linear layer for later use
-        self.linear_mlp = nn.Linear(4096, 10, bias=True)
+        self.linear_mlp = nn.Linear(in_features=self._out_feature_dim, out_features=10, bias=True)
 
         self._self_training = self_training
 
@@ -121,10 +128,14 @@ class MoCoV2(nn.Module):
                     self._dequeue_and_enqueue(k)
 
             # Compute logits
-            # positive_logits = torch.einsum('nc,nc->n', [q, k]).unsqueeze(-1)
-            # negative_logits = torch.einsum('nc,ck->nk', [q, self.queue.clone().detach()])
-            positive_logits = torch.bmm(q.view(batch_size, 1, self._out_feature_dim), k.view(batch_size, self._out_feature_dim, 1))
-            negative_logits = torch.mm(q.view(batch_size, self._out_feature_dim), self.queue.clone().detach())
+            positive_logits = torch.bmm(
+                q.view(batch_size, 1, self._out_feature_dim),
+                k.view(batch_size, self._out_feature_dim, 1)
+            )
+            negative_logits = torch.mm(
+                q.view(batch_size, self._out_feature_dim),
+                self.queue.clone().detach()
+            )
 
             # Insert the positive logit in a random index
             logits = torch.cat([positive_logits.view(-1, 1), negative_logits], dim=1)

@@ -1,7 +1,7 @@
 import os
 
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-os.environ['CUDA_VISIBLE_DEVICES'] = '4,5,6,7'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3,4,5,6'
 
 from datetime import datetime
 from AdvancedDL import LOGS_DIR
@@ -26,11 +26,11 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 
 # Define the log dir
-self_training_num_epochs = 100
-supervised_training_num_epochs = 50
+self_training_num_epochs = 1000
+supervised_training_num_epochs = 250
 
-# encoder_builder = resnet50
-encoder_builder = resnet18
+encoder_builder = resnet50
+# encoder_builder = resnet18
 date = str(datetime.today()).split()[0]
 experiment_name = f"MoCoV2_{'ResNet50' if encoder_builder == resnet50 else 'ResNet18'}_{self_training_num_epochs}_STE_{supervised_training_num_epochs}_E_{date}"
 # log_dir = LOGS_DIR
@@ -39,11 +39,11 @@ logs_dir = os.path.join(log_dir, experiment_name)
 os.makedirs(logs_dir, exist_ok=True)
 
 # Define the Datasets & Data loaders
-data_parallel = False
+data_parallel = True
 device_ids = [0, 1, 2, 3]
-num_workers = 64
+num_workers = 32
 pin_memory = True
-batch_size = 256
+batch_size = 32
 self_train_dl = DataLoader(
     dataset=imagenette_self_train_ds,
     batch_size=batch_size,
@@ -190,7 +190,7 @@ if __name__ == '__main__':
     print("Pre-training the model")
     checkpoints = True
     early_stopping = None
-    checkpoints_mode = 'min'
+    checkpoints_mode = 'max'
     trainer.fit(
         dl_train=self_train_dl,
         dl_val=self_train_dl,
