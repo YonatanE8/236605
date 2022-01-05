@@ -6,7 +6,7 @@ from typing import Type, Any, Callable, Union, List, Optional
 import torch.nn as nn
 
 
-class ResNet(TorchResNet):
+class ResNetBackbone(TorchResNet):
     def __init__(
             self,
             in_channels: int,
@@ -19,7 +19,7 @@ class ResNet(TorchResNet):
             replace_stride_with_dilation: Optional[List[bool]] = None,
             norm_layer: Optional[Callable[..., nn.Module]] = None,
     ) -> None:
-        super(ResNet, self).__init__(
+        super(ResNetBackbone, self).__init__(
             block=block,
             layers=layers,
             num_classes=num_classes,
@@ -30,18 +30,8 @@ class ResNet(TorchResNet):
             norm_layer=norm_layer,
         )
 
-        inplanes = 64
-        self.entry_layer = nn.Conv2d(
-            in_channels,
-            inplanes,
-            kernel_size=(7, 7),
-            stride=(2, 2),
-            padding=3,
-            bias=False,
-        )
-
     def _forward_impl(self, x: Tensor) -> Tensor:
-        x = self.entry_layer(x)
+        x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)
@@ -79,8 +69,8 @@ class IdentityLayer(nn.Module):
 def resnet18(
         in_channels: int,
         **kwargs: Any,
-) -> ResNet:
-    return ResNet(
+) -> ResNetBackbone:
+    return ResNetBackbone(
         in_channels=in_channels,
         block=BasicBlock,
         layers=[2, 2, 2, 2],
@@ -91,8 +81,8 @@ def resnet18(
 def resnet34(
         in_channels: int,
         **kwargs: Any,
-) -> ResNet:
-    return ResNet(
+) -> ResNetBackbone:
+    return ResNetBackbone(
         in_channels=in_channels,
         block=Bottleneck,
         layers=[3, 4, 6, 3],
@@ -103,8 +93,8 @@ def resnet34(
 def resnet50(
         in_channels: int,
         **kwargs: Any,
-) -> ResNet:
-    return ResNet(
+) -> ResNetBackbone:
+    return ResNetBackbone(
         in_channels=in_channels,
         block=Bottleneck,
         layers=[3, 4, 6, 3],
@@ -115,8 +105,8 @@ def resnet50(
 def resnet101(
         in_channels: int,
         **kwargs: Any,
-) -> ResNet:
-    return ResNet(
+) -> ResNetBackbone:
+    return ResNetBackbone(
         in_channels=in_channels,
         block=Bottleneck,
         layers=[3, 4, 23, 3],

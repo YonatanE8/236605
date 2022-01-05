@@ -1,7 +1,7 @@
 import os
 
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-os.environ['CUDA_VISIBLE_DEVICES'] = '3,4'
+os.environ['CUDA_VISIBLE_DEVICES'] = '4,5,6,7'
 
 from datetime import datetime
 from AdvancedDL import LOGS_DIR
@@ -10,7 +10,7 @@ from AdvancedDL.src.models.moco import MoCoV2
 from AdvancedDL.src.training.logger import Logger
 from AdvancedDL.src.training.trainer import MoCoTrainer
 from AdvancedDL.src.training.optimizer import OptimizerInitializer
-from AdvancedDL.src.losses.losses import BinaryCrossEntropy, CrossEntropy, TopKAccuracy, ContrastiveAccuracy
+from AdvancedDL.src.losses.losses import CrossEntropy, TopKAccuracy, ContrastiveAccuracy
 from AdvancedDL.src.utils.defaults import Predictions, Labels, Targets
 from AdvancedDL.src.models.resnet import resnet18, resnet50, IdentityLayer
 from AdvancedDL.src.data.datasets import imagenette_train_ds, imagenette_val_ds, imagenette_self_train_ds
@@ -26,8 +26,8 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 
 # Define the log dir
-self_training_num_epochs = 1500
-supervised_training_num_epochs = 1500
+self_training_num_epochs = 100
+supervised_training_num_epochs = 50
 
 # encoder_builder = resnet50
 encoder_builder = resnet18
@@ -39,11 +39,11 @@ logs_dir = os.path.join(log_dir, experiment_name)
 os.makedirs(logs_dir, exist_ok=True)
 
 # Define the Datasets & Data loaders
-data_parallel = True
-device_ids = [0, 1,]
-num_workers = 32
+data_parallel = False
+device_ids = [0, 1, 2, 3]
+num_workers = 64
 pin_memory = True
-batch_size = 64
+batch_size = 256
 self_train_dl = DataLoader(
     dataset=imagenette_self_train_ds,
     batch_size=batch_size,
@@ -69,36 +69,21 @@ val_dl = DataLoader(
 
 # Define the model
 in_channels = 3
-# queue_size = 8192
-queue_size = 128
+queue_size = 4096
 if data_parallel:
     queue_size /= len(device_ids)
     queue_size = int(queue_size)
 
 momentum = 0.999
 temperature = 0.2
+n_classes = 10
+self_training = True
 resnet_kwargs = {
-     'norm_layer': None,
+    'norm_layer': None,
     # 'norm_layer': IdentityLayer,
     # 'norm_layer': torch.nn.InstanceNorm2d,
 
 }
-n_classes = 10
-n_layers = 2
-units_grow_rate = 1
-l0_units = 2048
-bias = True
-activation = 'relu'
-mlp_params = {
-    'in_channels': 10,
-    'n_layers': n_layers,
-    'out_channels': 1,
-    'l0_units': l0_units,
-    'units_grow_rate': units_grow_rate,
-    'bias': bias,
-    'activation': activation,
-}
-self_training = True
 model_params = {
     'in_channels': in_channels,
     'encoder_builder': encoder_builder,
@@ -106,7 +91,6 @@ model_params = {
     'momentum': momentum,
     'temperature': temperature,
     'resnet_kwargs': resnet_kwargs,
-    'mlp_params': mlp_params,
     'self_training': self_training,
 }
 model = MoCoV2(
@@ -119,12 +103,12 @@ if data_parallel:
 
 # Define the optimizer
 optimizers_types = (
-     torch.optim.AdamW,
+    torch.optim.AdamW,
     # torch.optim.SGD,
 )
 optimizers_params = (
     {
-        'lr': 0.0001,
+        'lr': 0.001,
         'weight_decay': 1e-4,
     },
     # {
@@ -144,7 +128,7 @@ schedulers_params = (
         {
             'mode': 'min',
             'factor': 0.1,
-            'patience': 20,
+            'patience': 10,
             'threshold': 1e-4,
             'threshold_mode': 'rel',
             'cooldown': 0,
@@ -171,7 +155,7 @@ model_parameters = (model.parameters(),)
 optimizer = optimizer.initialize(model_parameters)
 
 # Define the loss & evaluation functions
-loss_fn = BinaryCrossEntropy(
+loss_fn = CrossEntropy(
     predictions_key=Predictions,
     target_key=Labels,
 )
@@ -234,19 +218,19 @@ if __name__ == '__main__':
 
     # Define a new optimizer for the fine-tuning phase
     optimizers_types = (
-        # torch.optim.AdamW,
-        torch.optim.SGD,
+        torch.optim.AdamW,
+        # torch.optim.SGD,
     )
     optimizers_params = (
-        # {
-        #    'lr': 0.1,
-        #     'weight_decay': 1e-4,
-        # },
         {
-            'lr': 30,
-            'momentum': 0.9,
-            'weight_decay': 0,
+            'lr': 0.01,
+            'weight_decay': 0.001,
         },
+        # {
+        #     'lr': 30,
+        #     'momentum': 0.9,
+        #     'weight_decay': 0,
+        # },
     )
     optimizer_init_params = {
         'optimizers_types': optimizers_types,
