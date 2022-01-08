@@ -12,7 +12,7 @@ from AdvancedDL.src.training.trainer import MoCoTrainer
 from AdvancedDL.src.training.optimizer import OptimizerInitializer
 from AdvancedDL.src.losses.losses import CrossEntropy, TopKAccuracy, ContrastiveAccuracy
 from AdvancedDL.src.utils.defaults import Predictions, Labels, Targets
-from AdvancedDL.src.models.resnet import resnet18, resnet50, IdentityLayer
+from AdvancedDL.src.models.resnet import resnet18, resnet34, resnet50, resnet101, IdentityLayer
 from AdvancedDL.src.data.datasets import imagenette_train_ds, imagenette_val_ds, imagenette_self_train_ds
 
 import torch
@@ -32,7 +32,10 @@ supervised_training_num_epochs = 250
 encoder_builder = resnet50
 # encoder_builder = resnet18
 date = str(datetime.today()).split()[0]
-experiment_name = f"MoCoV2_{'ResNet50' if encoder_builder == resnet50 else 'ResNet18'}_{self_training_num_epochs}_STE_{supervised_training_num_epochs}_E_{date}"
+experiment_name = f"MoCoV2_" \
+                  f"{'ResNet50' if encoder_builder == resnet50 else 'ResNet18'}" \
+                  f"_{self_training_num_epochs}_STE_{supervised_training_num_epochs}_E_{date}"
+
 # log_dir = LOGS_DIR
 log_dir = '/mnt/walkure_pub/yonatane/logs/'
 logs_dir = os.path.join(log_dir, experiment_name)
